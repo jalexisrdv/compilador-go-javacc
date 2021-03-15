@@ -1,0 +1,113 @@
+package main
+import "fmt"
+func main() {
+var opcion int = 1
+var opcionFigura int
+var base float64
+var altura float64
+var a float64a
+var b float64
+var c float64
+var PI float64 = 3.1416
+var r float64
+var areaT float64
+var areaR float64
+var areaC float64
+var areaCi float64
+var perimetroT float64
+var perimetroR float64
+var perimetroC float64
+var perimetroCi float64
+for opcion == 1 || opcion == 2 {
+fmt.Printf("\nIngresa la opción deseada:")
+fmt.Printf("\n1.- Calcular área")
+fmt.Printf("\n2.- Calcular périmetro")
+fmt.Printf("\n3.- No realizar cálculo\n")
+fmt.Scanf("%d", &opcion)
+switch opcion {
+case 1:
+fmt.Printf("\nSeleccioine la figura para calcular área: ")
+fmt.Printf("\n1.- Triangulo")
+fmt.Printf("\n2.- Rectangulo")
+fmt.Printf("\n3.- Cuadrado\n")
+fmt.Scanf("%d", &opcionFigura)
+if opcionFigura == 1 {
+fmt.Printf("\nFigura seleccionada: triangulo")
+fmt.Printf("\nIngresa el valor de la base:\n")
+fmt.Scanf("%f", &base)
+fmt.Printf("\nIngresa el valor de la altura:\n")
+fmt.Scanf("%f", &altura)
+areaT = (base * altura) / 2
+fmt.Printf("\nEl area del triangulo es: %f\n", areaT)
+}
+if opcionFigura == 2 {
+fmt.Printf("\nFigura seleccionada: rectangulo")
+fmt.Printf("\nIngresa el valor de a:\n")
+fmt.Scanf("%d", &a)
+fmt.Printf("\nIngresa el valor de b:\n")
+fmt.Scanf("%d", &b)
+areaR = a * b
+fmt.Printf("\nEl area del rectangulo es: %d\n", areaR)
+}
+if opcionFigura == 3 {
+fmt.Printf("\nFigura seleccionada: cuadrado")
+fmt.Printf("\nIngresa el valor de a:\n")
+fmt.Scanf("%d", &a)
+areaC = a * a
+fmt.Printf("\nEl area del cuadrado es: %d\n", areaC)
+}
+if opcionFigura == 4 {
+fmt.Printf("\nFigura seleccionada: circulo")
+fmt.Printf("\nIngresa el valor de r:\n")
+fmt.Scanf("%d", &r)
+areaCi = PI * (r * r)
+fmt.Printf("\nEl area del circulo es: %d\n", areaCi)
+}
+if opcionFigura != 1 && opcionFigura != 2 && opcionFigura != 3 && opcionFigura != 4 {
+fmt.Printf("\nLa opción ingresada no existe\n")
+}
+case 2:
+fmt.Printf("\nSeleccioine la figura para calcular périmetro: ")
+fmt.Printf("\n1.- Triangulo")
+fmt.Printf("\n2.- Rectangulo")
+fmt.Printf("\n3.- Cuadrado\n")
+fmt.Scanf("%d", &opcionFigura)
+switch opcionFigura {
+case 1:
+fmt.Printf("\nFigura seleccionada: triangulo")
+fmt.Printf("\nIngresa el valor de a:\n")
+fmt.Scanf("%d", &a)
+fmt.Printf("\nIngresa el valor de b:\n")
+fmt.Scanf("%d", &b)
+fmt.Printf("\nIngresa el valor de c:\n")
+fmt.Scanf("%d", &c)
+perimetroT = a + b + c
+fmt.Printf("\nEl perimetro del triangulo es: %d\n", perimetroT)
+case 2:
+fmt.Printf("\nFigura seleccionada: rectangulo")
+fmt.Printf("\nIngresa el valor de a:\n")
+fmt.Scanf("%d", &a)
+fmt.Printf("\nIngresa el valor de b:\n")
+fmt.Scanf("%d", &b)
+perimetroR = 2 * (a + b)
+fmt.Printf("\nEl perimetro del rectangulo es: %d\n", perimetroR)
+case 3:
+fmt.Printf("\nFigura seleccionada: cuadrado")
+fmt.Printf("\nIngresa el valor de a:\n")
+fmt.Scanf("%d", &a)
+perimetroC = a * 4
+fmt.Printf("\nEl perimetro del cuadrado es: %d\n", perimetroC)
+case 4:
+fmt.Printf("\nFigura seleccionada: circulo")
+fmt.Printf("\nIngresa el valor de r:\n")
+fmt.Scanf("%d", &r)
+perimetroCi = 2 * PI * r
+fmt.Printf("\nEl perimetro del circulo es: %d\n", perimetroCi)
+default:
+fmt.Printf("\nLa opción ingresada no existe\n")
+}
+default:
+fmt.Printf("\nEjecución terminada\n")
+}
+}
+}

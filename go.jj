@@ -1,0 +1,1013 @@
+/* 
+Los errores en la programación pueden ser de los siguientes tipos:
+• Léxicos, producidos al escribir mal un identificador, una palabra clave o un
+operador.
+• Sintácticos, por una expresión aritmética o paréntesis no equilibrados.
+
+• Semántico: Un error semántico se produce cuando la sintaxis del código es correcta, pero la semántica o significado no es el que se pretendía. La construcción obedece las reglas del lenguaje, y por ello el compilador o intérprete no detectan los errores semánticos.
+*/
+
+/*
+//OBSERVACIÓN 1
+Cuando vamos a utilizar tokens para crear el arbol de parseo, y necesitamos definir nuevos tokens dentro del parseo.
+
+Ejemplo:
+
+<rw_import><opening_round_brackets>(<double_quotes><id><double_quotes>)+<closing_round_brackets>
+
+<double_quotes><id><double_quotes> => esto es un nuevo token que estamos definiendo, por lo tanto cuando 
+nosotros queremos capturar errores en donde solo exista un id o doble comilla, nos mostrara mensajes
+respecto al token id o doble comilla y no capturara el error esperado. Por este motivo es mejor definir un nuevo token
+que incluya el formato requerido <double_quotes><id><double_quotes> => <string_literal> de esta forma
+ahora se capturan los errores sin causar conflictos. Y si queremos capturar errores donde el nombre del paquete no
+tenga comilla doble o sea una cadena vacia, realice un token nuevo para capturar estos errores y asi llamarlo dentro
+de su metodo para generar el arbol de parseo. Me he dado cuenta de esto mediante prueba y error, con esto he logrado
+capturar errores sin tener conflictos.
+
+//OBSERVACIÓN 2
+Al momento de agregar las nuevas gramaticas o metodos para capturar errores, estos siempre den ir al final
+de las gramaticas de sintaxis correcta, ya que pueden ocasionar problemas y mostrar errores de mas.
+
+//OBSERVACIÓN 3
+Es mejor poner las gramaticas que tienen mas tokens unidos al principio, ordenarlas de mayor a menor
+de esta forma entran de forma segura a los casos correspondientes y evitamos generar errores extra al momento
+de leer nuestro codigo o que se generen errores diferentes al esperado.
+
+//OBSERVACIÓN 4
+Tener cuidado al usar LOOKAHEAD(N) en ocasiones puede generar bucles o errores, por lo cual hay que saber
+la cantidad adecuada a pasar por parametro.
+
+//OBSERVACIÓN 5
+Tratar de reducir el numero de gramaticas, eso facilita a javacc generar el arbol. Lo ayuda a detectar los
+errores sin que se confunda.
+
+//OBSERVACION 6
+Para ser que javacc pueda detectar de manera precisa el numero de linea donde ocurre el error cuando hace falta algun token,
+en donde hace falta el token o incluso donde se consuma un token que permita detectar la linea de error adecuada 
+se debe poner el msj o llamar al metodo que imprima dicho msj. Ejemplo:
+
+//de esta manera me detecta el numero de linea donde ocurre el error de manera incorrecta
+//debido a que el msj se muestra despues de detectar el tipo de funcion
+void errorIdFS():{} {
+    <rw_func><opening_round_brackets>parametersList()<closing_round_brackets>
+    (multipleReturnsFS()  | oneReturnFS() | withoutReturnFS() )
+    {customError.saveErrorMsg(SINTACTICO, token, "identificador");}
+}
+
+//de esta forma se detecta el numero de error en la linea correcta, pues el msj lo estoy mostrando donde se esperaba
+//el token <id>, osea delante de <rw_func> y este fue el ultimo token consumido antes de mostrar el msj
+void errorIdFS():{} {
+    <rw_func>{customError.saveErrorMsg(SINTACTICO, token, "identificador");}<opening_round_brackets>parametersList()<closing_round_brackets>
+    (multipleReturnsFS()  | oneReturnFS() | withoutReturnFS() )
+}
+
+*/
+
+options {
+    //DEBUG_PARSER = true;
+    //DEBUG_LOOKAHEAD = true;
+}
+
+PARSER_BEGIN(Go)
+
+import java.util.ArrayList;
+
+public class Go {
+
+    private static Go analyzer;
+    private static SymbolTable symbolTable = new SymbolTable();
+    private static CustomError customError;
+    public static final String LEXICO = "LÉXICO";
+    public static final String SINTACTICO = "SINTÁCTICO";
+    public static Token auxToken;
+    public static String errorsSemantics = "";
+
+    public static void main(String args[]) throws ParseException {
+        try {
+            customError = new CustomError();
+            analyzer = new Go(System.in);
+            analyzer.compile();
+            
+            if(customError.getErrorsLexicon().isEmpty() && customError.getErrorsSintactic().isEmpty() && errorsSemantics.isEmpty()) {
+                System.out.println("COMPILADO CORRECTAMENTE");
+                guardar("lexico","");
+                guardar("sintactico","");
+                guardar("semantico","");
+            }else {
+                System.out.println("NO COMPILADO CORRECTAMENTE, OCURRIERON ERRORES DURANTE COMPILACIÓN");
+                
+                if(!customError.getErrorsLexicon().isEmpty()) {
+                    System.out.println("\n\nERRORES LEXICOS: ");
+                    guardar("lexico",customError.getErrorsLexicon());
+                    System.out.println(customError.getErrorsLexicon());
+                }
+                if(!customError.getErrorsSintactic().isEmpty()) {
+                    System.out.println("\n\nERRORES SINTACTICOS: ");
+                    System.out.println(customError.getErrorsSintactic());
+                    guardar("sintactico",customError.getErrorsSintactic());
+                }
+                if(!errorsSemantics.isEmpty()) {
+                    System.out.println("\n\nERRORES SEMANTICOS: ");
+                    System.out.println(errorsSemantics);
+                    guardar("semantico",errorsSemantics);
+                }
+            }
+        }catch(ParseException e) {
+            System.out.println("MAIN HILO" + e.getMessage());
+        }finally {
+            /*Guardar en archivos por separado de acuerdo al tipo de error
+            System.out.println("ERRORES LEXICOS: ");
+            System.out.println(customError.getErrorsLexicon());
+            System.out.println("ERRORES SINTACTICOS: ");
+            System.out.println(customError.getErrorsSintactic());
+            System.out.println("ERRORES SEMANTICOS: ");
+            System.out.println(errorsSemantics);*/
+        }
+    }
+     public static void guardar(String errortype,String errors) {
+            String ruta =  System.getProperty("user.dir") + "/errores/"+errortype+".txt";
+            ArrayList<String> nuevo = new ArrayList();
+            nuevo.add(errors);
+            Archivo.grabarArchivo(ruta, nuevo);
+    }
+    
+}
+
+class CustomError {
+
+    private String errorsLexicon;
+    private String errorsSintactic;
+
+    public CustomError() {
+        errorsLexicon = "";
+        errorsSintactic = "";
+    }
+
+    public void saveErrorSintactic(Token token, String msg) {
+        errorsSintactic += "ERROR SINTÁCTICO AL DECLARAR " + msg.toUpperCase() + " => EN LA LÍNEA: " + token.beginLine + "\n";
+    }
+
+    public void saveErrorLexicon(Token token, String msg) {
+        errorsLexicon += "ERROR LÉXICO AL DECLARAR " + msg.toUpperCase() + " => EN LA LÍNEA: " + token.beginLine + "\n";
+    }
+
+    public String getErrorsSintactic() {
+        return errorsSintactic;
+    }
+
+    public String getErrorsLexicon() {
+        return errorsLexicon;
+    }
+
+}
+
+PARSER_END(Go)
+
+/* LOS METODOS Y VARIABLES QUE SE DECLARAN DENTRO DE TOKEN_MGR_DECLS, SOLO PUEDEN SER
+USADOS POR LOS TOKENS, LOS METODOS DEBEN SER DECLARADOS COMO STATIC*/
+TOKEN_MGR_DECLS: {
+
+    //MOSTRAR PAR ORDENADO
+    private static void showTidyPair(String type, StringBuilder value) {
+        //System.out.println(type + ": " + value);
+    }
+
+}
+
+//ESPACIOS A IGNORAR
+SKIP: {
+	" "
+    | "\t"
+    | "\r"
+    | "\r\t"
+    | "\n"//{System.out.println("contando....");}
+    //soporte comentarios una linea
+    | < "//" (~["\n","\r"])* >
+    //soporte comentarios multilinea
+    | < "/*" (~["*"])* "*" (~["*","/"] (~["*"])* "*" | "*")* "/" >
+}
+
+//TIPOS DE DATOS
+TOKEN: {
+    <integer_literal: <numbers> >{showTidyPair("tipo_de_dato_entero", image);}
+    | <floating_literal: (<numbers>"."<numbers>) | ("."<numbers>) | (<numbers>".") | <numbers> >{showTidyPair("tipo_de_dato_flotante", image);}
+    | <boolean_literal: ("true" | "false")>{showTidyPair("tipo_de_dato_booleano", image);}
+    | <string_literal: <double_quotes>(<valid_characters> | (<back_slash><back_slash>) | <double_quotes_in_string> | <tabulations>)*<double_quotes> >{showTidyPair("tipo_de_dato_cadena", image);}
+    | <#numbers: (["0"-"9"])+>
+    | <#valid_characters: ~["\"", "\\"]>
+    | <#double_quotes_in_string: "\\\"">
+    | <#back_slash: "\\">
+    | <#tabulations: ("\\f" | "\\n" | "\\t" | "\\v" | "\\r")>
+}
+
+//OPERADORES ARITMETICOS
+TOKEN: {
+    <addition: "+">{showTidyPair("operador_aritmético_suma", image);}
+    | <subtraction: "-">{showTidyPair("operador_aritmético_resta", image);}
+    | <multiplication: "*">{showTidyPair("operador_aritmético_multiplicación", image);}
+    | <division: "/">{showTidyPair("operador_aritmético_división", image);}
+    | <remainder: "%">{showTidyPair("operador_aritmético_residuo", image);}
+    | <increment: "++">{showTidyPair("operador_aritmético_incremento", image);}
+    | <decrement: "--">{showTidyPair("operador_aritmético_decremento", image);}
+}
+
+//OPERADORES RELACIONALES
+TOKEN: {
+    <equal: "==">{showTidyPair("operador_relacional_igual", image);}
+    | <not_equal: "!=">{showTidyPair("operador_relacional_diferente", image);}
+    | <greater_than: ">">{showTidyPair("operador_relacional_mayor_que", image);}
+    | <less_than: "<">{showTidyPair("operador_relacional_menor_que", image);}
+    | <greater_than_or_equal: ">=">{showTidyPair("operador_relacional_mayor_o_igual_que", image);}
+    | <less_than_or_equal: "<=">{showTidyPair("operador_relacional_menor_o_igual_que", image);}
+}
+
+//OPERADORES LOGICOS A NIVEL DE BIT
+TOKEN: {
+    <bitwise_and: "&">{showTidyPair("operador_logico_nivel_bit_and", image);}
+    | <bitwise_inclusive_or: "|">{showTidyPair("operador_logico_nivel_bit_or", image);}
+    | <bitwise_exclusive_or: "^">{showTidyPair("operador_logico_nivel_bit_xor", image);}
+    | <left_shift: "<<">{showTidyPair("operador_logico_nivel_bit_corrimiento_bits_izquierda", image);}
+    | <right_shift: ">>">{showTidyPair("operador_logico_nivel_bit_corrimiento_bits_derecha", image);}
+}
+
+//OPERADORES LOGICOS
+TOKEN: {
+    <and: "&&">{showTidyPair("operador_logico_and", image);}
+    | <or: "||">{showTidyPair("operador_logico_or", image);}
+    | <not: "!">{showTidyPair("operador_logico_not", image);}
+}
+
+//OPERADORES DE ASIGNACION
+TOKEN: {
+    <assignment: "=">{showTidyPair("operador_asignación", image);}
+    | <dynamic_assignment: ":=">{showTidyPair("operador_asignación_dinámica", image);}
+    | <addition_assignment: "+=">{showTidyPair("operador_asignación_suma", image);}
+    | <subtraction_assignment: "-=">{showTidyPair("operador_asignación_resta", image);}
+    | <multiplication_assignment: "*=">{showTidyPair("operador_asignación_multiplicación", image);}
+    | <division_assignment: "/=">{showTidyPair("operador_asignación_división", image);}
+    | <remainder_assignment: "%=">{showTidyPair("operador_asignación_residuo", image);}
+    | <bitwise_and_assignment: "&=">{showTidyPair("operador_asignación_and", image);}
+    | <bitwise_inclusive_or_assignment: "|=">{showTidyPair("operador_asignación_or", image);}
+    | <bitwise_exclusive_or_assignment: "^=">{showTidyPair("operador_asignación_xor", image);}
+    | <left_shift_assignment: "<<=">{showTidyPair("operador_asignación_corrimiento_bits_izquierda", image);}
+    | <right_shift_assignment: ">>=">{showTidyPair("operador_asignación_corrimiento_bits_derecha", image);}
+}
+
+/*
+//OPERADORES DE DIRECCIONES
+YA ESTAN DECLARADOS, NO SE PUEDEN REPETIR TOKENS QUE TENGAN EL MISMO SIMBOLO
+TOKEN: {
+    <indirection_or_dereference: "*">
+    | <address_of: "&">
+}*/
+
+//SIMBOLOS
+TOKEN: {
+    <opening_round_brackets: "(">{showTidyPair("símbolo_parentesis_apertura", image);}
+    | <closing_round_brackets: ")">{showTidyPair("símbolo_parentesis_cierre", image);}
+    | <opening_curly_brackets: "{">{showTidyPair("símbolo_llave_apertura", image);}
+    | <closing_curly_brackets: "}">{showTidyPair("símbolo_llave_cierre", image);}
+    | <opening_square_brackets: "[">{showTidyPair("símbolo_corchete_apertura", image);}
+    | <closing_square_brackets: "]">{showTidyPair("símbolo_corchete_cierre", image);}
+    //| <left_angle_brackets: "<">
+    //| <right_angle_brackets: ">">
+    | <semicolon: ";">{showTidyPair("símbolo_punto_y_coma", image);}
+    | <colon: ":">{showTidyPair("símbolo_doble_punto", image);}
+    | <dot: ".">{showTidyPair("símbolo_punto", image);}
+    | <comma: ",">{showTidyPair("símbolo_coma", image);}
+    | <double_quotes: "\"">{showTidyPair("símbolo_doble_comilla", image);}
+    | <quotes: "'">{showTidyPair("símbolo_comilla", image);}
+}
+
+//PALABRAS RESERVADAS E IDENTIFICADOR
+//RW = RESERVED WORD
+//DT = DATA TYPE
+TOKEN: {
+    <rw_break: "break">{showTidyPair("palabra_reservada", image);}
+    | <rw_default: "default">{showTidyPair("palabra_reservada", image);}
+    | <rw_func: "func">{showTidyPair("palabra_reservada", image);}
+    | <rw_interface: "interface">{showTidyPair("palabra_reservada", image);}
+    | <rw_select: "select">{showTidyPair("palabra_reservada", image);}
+    | <rw_case: "case">{showTidyPair("palabra_reservada", image);}
+    | <rw_defer: "defer">{showTidyPair("palabra_reservada", image);}
+    | <rw_go: "go">{showTidyPair("palabra_reservada", image);}
+    | <rw_map: "map">{showTidyPair("palabra_reservada", image);}
+    | <rw_struct: "struct">{showTidyPair("palabra_reservada", image);}
+    | <rw_chan: "chan">{showTidyPair("palabra_reservada", image);}
+    | <rw_else: "else">{showTidyPair("palabra_reservada", image);}
+    | <rw_goto: "goto">{showTidyPair("palabra_reservada", image);}
+    | <rw_package: "package">{showTidyPair("palabra_reservada", image);}
+    | <rw_switch: "switch">{showTidyPair("palabra_reservada", image);}
+    | <rw_const: "const">{showTidyPair("palabra_reservada", image);}
+    | <rw_fallthrough: "fallthrough">{showTidyPair("palabra_reservada", image);}
+    | <rw_if: "if">{showTidyPair("palabra_reservada", image);}
+    | <rw_range: "range">{showTidyPair("palabra_reservada", image);}
+    | <rw_type: "type">{showTidyPair("palabra_reservada", image);}
+    | <rw_continue: "continue">{showTidyPair("palabra_reservada", image);}
+    | <rw_for: "for">{showTidyPair("palabra_reservada", image);}
+    | <rw_import: "import">{showTidyPair("palabra_reservada", image);}
+    | <rw_return: "return">{showTidyPair("palabra_reservada", image);}
+    | <rw_var: "var">{showTidyPair("palabra_reservada", image);}
+    | <dt_uint8: "uint8">{showTidyPair("palabra_reservada", image);}
+    | <dt_uint16: "uint16">{showTidyPair("palabra_reservada", image);}
+    | <dt_uint32: "uint32">{showTidyPair("palabra_reservada", image);}
+    | <dt_uint64: "uint64">{showTidyPair("palabra_reservada", image);}
+    | <dt_int8: "int8">{showTidyPair("palabra_reservada", image);}
+    | <dt_int16: "int16">{showTidyPair("palabra_reservada", image);}
+    | <dt_int32: "int32">{showTidyPair("palabra_reservada", image);}
+    | <dt_int64: "int64">{showTidyPair("palabra_reservada", image);}
+    | <dt_float32: "float32">{showTidyPair("palabra_reservada", image);}
+    | <dt_float64: "float64">{showTidyPair("palabra_reservada", image);}
+    | <dt_complex64: "complex64">{showTidyPair("palabra_reservada", image);}
+    | <dt_complex128: "complex128">{showTidyPair("palabra_reservada", image);}
+    | <dt_byte: "byte">{showTidyPair("palabra_reservada", image);}
+    | <dt_rune: "rune">{showTidyPair("palabra_reservada", image);}
+    | <dt_uint: "uint">{showTidyPair("palabra_reservada", image);}
+    | <dt_int: "int">{showTidyPair("palabra_reservada", image);}
+    | <dt_uintptr: "uintptr">{showTidyPair("palabra_reservada", image);}
+    | <dt_string: "string">{showTidyPair("palabra_reservada", image);}
+    | <dt_bool: "bool">{showTidyPair("palabra_reservada", image);}
+    | <main: "main">{showTidyPair("palabra_reservada_main", image);}
+    | <library_fmt: "fmt">{showTidyPair("nombre_paquete", image);}
+    | <rw_printf: "Printf">{showTidyPair("funciones_paquete", image);}
+    | <rw_scanf: "Scanf">{showTidyPair("funciones_paquete", image);}
+    | <id: (["a"-"z","A"-"Z","_"])+(["a"-"z","A"-"Z","0"-"9","_"])*>{showTidyPair("identificador", image);}
+}
+
+//ERRORES
+//SI ES UNA CADENA INVALIDA, NO HACE FALTA CAPTURAR ERRORES DE ID, SOLO DEBO CAPTURAR CADENAS NO VALIDAS Y LISTO
+//RW = RESERVED WORD
+//IC = INVALID CHARACTER
+TOKEN: {
+    <invalid_string: 
+    <is_not_id> | <invalid_character>
+    >{showTidyPair("cadenas_no_validas", image);}
+
+    | <invalid_string_import: 
+        <invalid_string_import_1>
+        | <invalid_string_import_2>
+    >
+
+    | <#invalid_string_import_1: "\""(["a"-"z", "A"-"Z"])*>
+    | <#invalid_string_import_2: (["a"-"z", "A"-"Z"])*"\"">
+
+    | <#is_not_id: (["0"-"9"])+(["a"-"z","A"-"Z","_"])+(["a"-"z","A"-"Z","0"-"9","_"])*>
+    | <#invalid_character: ( ~["'", "\"", "\n", "\r", "\t", " ", ";", ":", "{", "}", "(", ")", "+", "-", "*", "/", "&", "|", "!", "<", ">", "=", ".", ","] )+ >
+}
+
+void compile():{} {
+    try {
+        packageStatement()importStatement()mainFunctionStatement()
+    }catch(ParseException e) {
+        System.out.println("compile: " + e.getMessage());
+    }
+}
+
+/*declaración de paquete
+PS = package statement
+*/
+void packageStatement():{
+    String msg = "package";
+} {
+    try {
+        LOOKAHEAD(2)(
+            (<rw_package> | <invalid_string>{saveErrorLexicon(msg);} | <id>{saveErrorSintactic(msg);}) 
+        (<main> | <invalid_string>{saveErrorLexicon(msg);} | <id>{saveErrorSintactic(msg);} ) 
+        
+        ) | errorPackagePS() | LOOKAHEAD(2)errorIdPS()
+    }catch(ParseException e) {
+        System.out.println("package: " + e.getMessage());
+    }
+}
+void errorPackagePS():{} {
+    <main>
+    {customError.saveErrorSintactic(token, "package");}
+}
+void errorIdPS():{} {
+    <rw_package>
+    {customError.saveErrorSintactic(token, "package");}
+}
+
+/*importación de librerias
+IS = import statement
+*/
+void importStatement():{
+    String msg = "import";
+} {
+    try {
+        /*linea 264, si se pone LOOKAHEAD(2) no se reconoce error3 y esto es debido a que
+        cuando javacc analiza tokens solo llega a opening_round_brackets y se concidera sintaxis valida, 
+        para que logre diferenciar es necesario que analice 3 tokens para que pueda detectar los casos*/
+        ( 
+            LOOKAHEAD(4)(<rw_import><opening_round_brackets>(<string_literal>)+<closing_round_brackets>)
+            | errorImportShortcutIS() | LOOKAHEAD(3)errorOpeningRoundBracketIS() | LOOKAHEAD(3)errorPackageNameShortcutIS()
+            | LOOKAHEAD(3)errorClosingBracketIS()
+            | LOOKAHEAD(2)( 
+                (<rw_import> | <invalid_string>{saveErrorLexicon(msg);} | <id>{saveErrorSintactic(msg);})
+                (<string_literal>) 
+            ) | errorImportIS() | errorPackageNameIS()
+        )*
+    }catch(ParseException e) {
+        System.out.println("import: " + e.getMessage());
+    }
+}
+
+//errores de importación de librerias con un solo import
+void errorImportShortcutIS():{} {
+    <opening_round_brackets>
+    {customError.saveErrorSintactic(token, "import");}
+    <string_literal><closing_round_brackets>
+}
+void errorOpeningRoundBracketIS():{} {
+    <rw_import>
+    {customError.saveErrorSintactic(token, "import");}
+    <string_literal><closing_round_brackets>
+}
+void errorPackageNameShortcutIS():{} {
+    <rw_import><opening_round_brackets>
+    {customError.saveErrorSintactic(token, "import");}
+    <closing_round_brackets>
+}
+void errorClosingBracketIS():{} {
+    <rw_import><opening_round_brackets><string_literal>
+    {customError.saveErrorSintactic(token, "import");}
+}
+//errores importación de librerias por separado
+void errorImportIS():{} {
+    <string_literal>
+    {customError.saveErrorSintactic(token, "import");}
+}
+void errorPackageNameIS():{} {
+    <rw_import>
+    {customError.saveErrorSintactic(token, "import");}
+}
+
+/*declaración de sentencias*/
+void sentences():{} {
+    (
+        LOOKAHEAD(5)variableStatement()
+        | LOOKAHEAD(4)dynamicVariableStatement()
+        | LOOKAHEAD(4)arithmeticExpressionStatement()
+        | switchStatement()
+        | LOOKAHEAD(2)ifElseStatement()
+        | LOOKAHEAD(5)forStatement()
+        | LOOKAHEAD(4)printfSatement()
+    )*
+}
+
+/*declaracion de funcion main*/
+void mainFunctionStatement():{
+    String msg = "variable";
+} {
+    try {
+        bodyMain()
+        sentences()
+        closingCurlyBracketMain()
+    }catch(ParseException e) {
+        Token t = e.currentToken.next;
+        String tokenImage = e.tokenImage[t.kind];
+        if(tokenImage.equals("<invalid_string>")) {
+            saveErrorLexicon(msg);
+        }else {
+            saveErrorSintactic(msg);
+        }
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets
+        };
+        recoverFromError(e, skipTo);
+        sentences();
+    }
+}
+
+void closingCurlyBracketMain():{} {
+    <closing_curly_brackets>
+}
+
+void bodyMain():{} {
+    try {
+        <rw_func><main><opening_round_brackets><closing_round_brackets>
+        <opening_curly_brackets>
+    }catch(ParseException e) {
+        System.out.println("bodyMain: " + e);
+    }
+}
+
+/*declaración tipos de datos*/
+void dataType():{} {
+    try {
+        <dt_uint8> | <dt_uint16> | <dt_uint32> | <dt_uint64> | <dt_int8> 
+        | <dt_int16> | <dt_int32> | <dt_int64> | <dt_float32> | <dt_float64> 
+        | <dt_complex64> | <dt_complex128> | <dt_byte> | <dt_rune> | <dt_uint> 
+        | <dt_int> | <dt_uintptr> | <dt_string> | <dt_bool>
+    }catch(ParseException e) {
+        System.out.println("dataType: " + e);
+    }
+}
+
+/*declaración literales de tipos de datos*/
+void dataLiteral():{} {
+    try {
+        <boolean_literal> | <floating_literal> | <integer_literal> | <string_literal>
+        | <id>
+    }catch(ParseException e) {
+        System.out.println("dataLiteral: " + e);
+    }
+}
+
+/*declaración de variables
+VS = variable statement
+*/
+void variableStatement():{
+    String msg = "variable";
+    String answer = "";
+    ArrayList<Token> varList = new ArrayList<>();
+    Token var;
+    int dt;
+} {
+    try {
+        (<rw_var> | <rw_const> )
+        identificatorList(){var=token;}
+        ( dataType(){
+                dt=token.kind; 
+                answer = symbolTable.insertSymbol(var, dt);
+                if(!answer.isEmpty()) {
+                    errorsSemantics += answer;
+                }
+            }[<assignment>listAssignment(var)] | <assignment>listAssignment(var) )[LOOKAHEAD(2)<semicolon>]
+    }catch(ParseException e) {
+        Token t = e.currentToken.next;
+        String tokenImage = e.tokenImage[t.kind];
+        if(tokenImage.equals("<invalid_string>")) {
+            saveErrorLexicon(msg);
+        }else {
+            saveErrorSintactic(msg);
+        }
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+void identificatorList():{} {
+    //try {
+        <id>[<comma>identificatorList()]
+    //}catch(ParseException e) {
+        //System.out.println("identificatorList: " + e);
+    //}
+}
+
+/*asignacion de variables*/
+void listAssignment(Token var):{
+
+} {
+    //try {
+        arithmeticExpression(var)[LOOKAHEAD(2)<comma>listAssignment(var)]
+    //}catch(ParseException e) {
+        //System.out.println("listAssignment: " + e);
+    //}
+}
+
+//declaracion de variable de tipado dinamico
+void dynamicVariableStatement():{
+    Token var;
+} {
+    try {
+        identificatorList(){var = token;}<dynamic_assignment>listAssignment(var)[LOOKAHEAD(2)<semicolon>]
+    }catch(ParseException e) {
+        System.out.println("dynamicVariableStatement: " + e);
+    }
+}
+
+/*delcaracion de operaciones aritmeticas*/
+void arithmeticExpressionStatement():{
+    Token var;
+} {
+    try {
+        <id>{var = token;}(assignmentOperators())( invalidString("variable") | arithmeticExpression(var))
+        [LOOKAHEAD(2)<semicolon>]
+    }catch(ParseException e) {
+        System.out.println("arithmeticExpressionStatement: " + e);
+    }
+}
+void arithmeticExpression(Token var):{
+    Token operator = null;
+} { 
+    /*Gramatica original
+        ( dataLiteral() | "(" arithmeticExpression() ")" ) 
+        ( 
+            ( <addition> | <subtraction> | <multiplication> | <division>) 
+            ( dataLiteral() | "(" arithmeticExpression() ")" )
+        )*
+    */
+    //try {
+        ( dataLiteral() 
+        | "(" arithmeticExpression(var) ")"  ) {catchSemanticsErrorAE(var, token, operator);}
+        ( 
+            ( <addition> | <subtraction> | <multiplication> | <division> ){operator = token;}
+            ( dataLiteral()   
+            | "(" arithmeticExpression(var) ")" ) {catchSemanticsErrorAE(var, token, operator);}
+        )*
+    //}catch(ParseException e) {
+        //System.out.println("arithmeticExpression: " + e);
+    //}
+}
+
+JAVACODE
+void catchSemanticsErrorAE(Token var, Token value, Token operator) {
+    String answer = "";
+    if( token.kind != opening_round_brackets && token.kind != closing_round_brackets ) {
+        answer = symbolTable.checkAssignment(var, value, operator);
+        if(!answer.isEmpty()) {
+            errorsSemantics += answer;
+        }
+    }
+}
+
+/*declaracion condicionales*/
+
+//condicional if, else if, else
+void ifElseStatement():{
+    String msg = "if";
+} {
+    try {
+        bodyIf()sentences()closingCurlyBracketIfElse()
+        [( LOOKAHEAD(2)<rw_else>ifElseStatement() | LOOKAHEAD(2)elseStatement() )]
+    }catch(ParseException e) {
+        //System.out.println("ifElseStatement: " + e);
+        Token t = e.currentToken.next;
+        String tokenImage = e.tokenImage[t.kind];
+        if(tokenImage.equals("<invalid_string>")) {
+            saveErrorLexicon(msg);
+        }else {
+            saveErrorSintactic(msg);
+        }
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+void bodyIf():{} {
+    <rw_if>[LOOKAHEAD(2)<opening_round_brackets>](relationalComparationIf())[<closing_round_brackets>]
+    <opening_curly_brackets>
+}
+void closingCurlyBracketIfElse():{} {
+    <closing_curly_brackets>
+}
+void elseStatement():{} {
+    //try {
+        [<rw_else>]<opening_curly_brackets>sentences()<closing_curly_brackets>
+    //}catch(ParseException e) {
+        //System.out.println("elseStatement: " + e);
+    //}
+}
+void relationalComparationIf():{} {
+    //try {
+        [LOOKAHEAD(2)<not>][LOOKAHEAD(2)<opening_round_brackets>]
+        [<not>]( invalidString("if") | relationalComparationOperands() )
+        relationalOperators()
+        [<not>]( invalidString("if") |  relationalComparationOperands() )
+        [<semicolon>][LOOKAHEAD(2)<closing_round_brackets>]
+        [conjunctionOperators()relationalComparationIf()]
+    //}catch(ParseException e) {
+        //System.out.println("relationalComparation: " + e);
+    //}
+}
+void relationalComparation():{} {
+    //try {
+        [LOOKAHEAD(2)<not>][LOOKAHEAD(2)<opening_round_brackets>]
+        [<not>]relationalComparationOperands()
+        relationalOperators()
+        [<not>]relationalComparationOperands()
+        [<semicolon>][LOOKAHEAD(2)<closing_round_brackets>]
+        [conjunctionOperators()relationalComparation()]
+    //}catch(ParseException e) {
+        //System.out.println("relationalComparation: " + e);
+    //}
+}
+void relationalComparationOperands():{} {
+    //try {
+        <floating_literal> | <integer_literal> | <string_literal>
+        | <boolean_literal> | <id>
+    //}catch(ParseException e) {
+        //System.out.println("relationalComparationOperands: " + e);
+    //}
+}
+void relationalOperators():{} {
+    //try {
+        <equal> | <not_equal> | <greater_than> | <less_than>
+        | <greater_than_or_equal> | <less_than_or_equal>
+    //}catch(ParseException e) {
+        //System.out.println("relationalOperators: " + e);
+    //}
+}
+void conjunctionOperators():{} {
+    //try {
+        <and> | <or>
+    //}catch(ParseException e) {
+        //System.out.println("conjunctionOperators: " + e);
+    //}
+}
+
+//condicional switch
+void switchStatement():{} {
+    try {
+        expressionSwitchStatement()
+    }catch(ParseException e) {
+        System.out.println("switchStatement: " + e);
+    }
+}
+void expressionSwitchStatement():{
+    String msg = "switch";
+    Token var;
+} {
+    try {
+        LOOKAHEAD(3)<rw_switch>[<opening_round_brackets>]<id>{var = token;}[<closing_round_brackets>]<opening_curly_brackets>
+    (caseSwitchStatement(var))*closingCurlyBracketSwtich()
+    
+    | LOOKAHEAD(3)errorOpeningCurlyBracketESS()
+    }catch(ParseException e) {
+        //System.out.println("expressionSwitchStatement: " + e);
+        Token t = e.currentToken.next;
+        String tokenImage = e.tokenImage[t.kind];
+        if(tokenImage.equals("<invalid_string>")) {
+            saveErrorLexicon(msg);
+        }else {
+            saveErrorSintactic(msg);
+        }
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+void closingCurlyBracketSwtich():{} {
+    <closing_curly_brackets>
+}
+void errorOpeningCurlyBracketESS():{
+    Token var;
+} {
+    <rw_switch>[<opening_round_brackets>]<id>{var = token;}[<closing_round_brackets>]
+    {saveErrorSintactic("switch");}
+    (caseSwitchStatement(var))*<closing_curly_brackets>
+}
+
+void caseSwitchStatement(Token var):{} {
+    try {
+        <rw_case>listAssignmentCaseSwitch(var)<colon>sentences()[<rw_break>][<semicolon>]
+        [defaultSwitchStatement()]
+    }catch(ParseException e) {
+        System.out.println("caseSwitchStatement: " + e);
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+void defaultSwitchStatement():{} {
+    try {
+        <rw_default><colon>sentences()[<rw_break>][<semicolon>]
+    }catch(ParseException e) {
+        System.out.println("defaultSwitchStatement: " + e);
+    }
+}
+void listAssignmentCaseSwitch(Token var):{} {
+    try {
+        dataLiteralCaseSwitch()[<comma>listAssignment(var)]
+    }catch(ParseException e) {
+        System.out.println("listAssignmentCaseSwitch: " + e);
+    }
+}
+void dataLiteralCaseSwitch():{} {
+    try {
+        <string_literal> | <integer_literal> | <id>
+    }catch(ParseException e) {
+        System.out.println("dataLiteralCaseSwitch: " + e);
+    }
+}
+
+/*ciclo for*/
+void forStatement():{} {
+    try {
+        forWithOneStopConditionStatement()
+    }catch(ParseException e) {
+        //System.out.println("forStatement: " + e);
+        int[] skipTo = {
+            closing_curly_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+
+void forWithOneStopConditionStatement():{} {
+    //try {
+        bodyFor()sentences()closingCurlyBracketFor()
+    //}catch(ParseException e) {
+        //System.out.println(e);
+    //}
+}
+void closingCurlyBracketFor():{} {
+    <closing_curly_brackets>
+}
+
+void bodyFor():{
+    String msg = "for";
+} {
+    try {
+        LOOKAHEAD(4)( <rw_for> | <invalid_string>{saveErrorLexicon(msg);} 
+        | <id>{saveErrorLexicon(msg);} )[<opening_round_brackets>]conditionFor()[<closing_round_brackets>]
+        <opening_curly_brackets>
+        | LOOKAHEAD(4)errorFWOSCS()
+    }catch(ParseException e) {
+        Token t = e.currentToken.next;
+        String tokenImage = e.tokenImage[t.kind];
+        if(tokenImage.equals("<invalid_string>")) {
+            saveErrorLexicon(msg);
+        }else {
+            saveErrorSintactic(msg);
+        }
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+
+void errorFWOSCS():{} {
+    [<opening_round_brackets>]
+    {saveErrorSintactic("for");}
+    conditionFor()[<closing_round_brackets>]
+    <opening_curly_brackets>
+}
+
+void conditionFor():{} {
+    //try {
+        [<not>]relationalComparationOperands()
+        relationalOperators()
+        [<not>]relationalComparationOperands()
+        [conjunctionOperators()conditionFor()]
+    //}catch(ParseException e) {
+        //System.out.println("conditionFor: " + e);
+    //}
+}
+
+void assignmentOperators():{} {
+    try {
+        <assignment> | <addition_assignment> 
+        | <subtraction_assignment> | <multiplication_assignment> 
+        | <division_assignment> | <remainder_assignment> | <bitwise_and_assignment> 
+        | <bitwise_inclusive_or_assignment> | <bitwise_exclusive_or_assignment> 
+        | <left_shift_assignment> | <right_shift_assignment>
+    }catch(ParseException e) {
+        System.out.println("assignmentOperators: " + e);
+    }
+}
+
+/*declaracion entrada y salida*/
+
+//sentencia de impresión
+void printfSatement():{
+    String msg = "printf/scanf";
+} {
+    try {
+        (<library_fmt><dot>(<rw_printf> | <rw_scanf>) | <id>{saveErrorSintactic(msg);} | <invalid_string>{saveErrorLexicon(msg);} )
+        (<opening_round_brackets>)
+        <string_literal>
+        [( LOOKAHEAD(2)<comma>(LOOKAHEAD(3)<id><comma>)*<id> 
+        | LOOKAHEAD(2)<comma>(LOOKAHEAD(3)<bitwise_and><id><comma>)*<bitwise_and><id> )]
+        <closing_round_brackets>[LOOKAHEAD(2)<semicolon>]
+    }catch(ParseException e) {
+        Token t = e.currentToken.next;
+        String tokenImage = e.tokenImage[t.kind];
+        if(tokenImage.equals("<invalid_string>")) {
+            saveErrorLexicon(msg);
+        }else {
+            saveErrorSintactic(msg);
+        }
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+
+void scanfSatement():{
+    String msg = "Scanf";
+} {
+    try {
+        (<library_fmt><dot><rw_scanf> | <id>{saveErrorSintactic(msg);} | <invalid_string>{saveErrorLexicon(msg);} )
+        <opening_round_brackets>
+        <string_literal><comma>(LOOKAHEAD(3)<bitwise_and><id><comma>)*<bitwise_and><id>
+        <closing_round_brackets>[LOOKAHEAD(2)<semicolon>]
+    }catch(ParseException e) {
+        Token t = e.currentToken.next;
+        String tokenImage = e.tokenImage[t.kind];
+        if(tokenImage.equals("<invalid_string>")) {
+            saveErrorLexicon(msg);
+        }else {
+            saveErrorSintactic(msg);
+        }
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+
+/*declaración del metodo para recuperarse del error*/
+JAVACODE
+private void recoverFromError(ParseException e, int[] skipTo) {
+	//Recover
+    boolean loop = true;
+	do {
+		token = getNextToken();
+		for (int i = 0; i < skipTo.length; i++) {
+			if (token.kind ==  skipTo[i]) {
+                loop = false;
+                break;
+            }
+		}
+    }while(loop);
+}
+JAVACODE
+private void showPossibleExpectedTokens(ParseException e) { 
+	//Get the possible expected tokens
+	StringBuffer expected = new StringBuffer();
+	for(int i = 0; i < e.expectedTokenSequences.length; i++) {
+		for(int j = 0; j < e.expectedTokenSequences[i].length;j++) {
+			expected.append("\n");
+			expected.append("     ");
+			expected.append(tokenImage[e.expectedTokenSequences[i][j]]);
+			expected.append("...");
+		}
+	}
+	//Print error message
+	if (e.expectedTokenSequences.length == 1) {
+		//reportParserError("\"%s\" found where %s sought", getToken(1), expected);
+	}else {
+		//reportParserError("\"%s\" found where one of %s sought", getToken(1), expected);
+	}
+}
+
+JAVACODE
+private void saveErrorSintactic(String msg) {
+    customError.saveErrorSintactic(token, msg);
+}
+JAVACODE
+private void saveErrorLexicon(String msg) {
+    customError.saveErrorLexicon(token, msg);
+}
+
+/*
+Utilidades para capturar errores lexicos, de tipo
+cadenas no validas.
+*/
+void invalidString(String msg):{} {
+    try {
+        {throw new ParseException();}
+        <invalid_string>
+    }catch(ParseException e) {
+        saveErrorLexicon(msg);
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets, closing_curly_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+void invalidId(String msg):{} {
+    try {
+        {throw new ParseException();}
+        <id>
+    }catch(ParseException e) {
+        saveErrorSintactic(msg);
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets, closing_curly_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+void invalidEmpty(String msg):{} {
+    try {
+        {throw new ParseException();}
+    }catch(ParseException e) {
+        saveErrorSintactic(msg);
+        int[] skipTo = {
+            dt_int, dt_float64, opening_curly_brackets, 
+            closing_round_brackets, closing_curly_brackets
+        };
+        recoverFromError(e, skipTo);
+    }
+}
+void empty(String msg):{} {
+    {saveErrorSintactic(msg);}
+}
